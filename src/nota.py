@@ -1,5 +1,5 @@
-from datetime import datetime
-from decimal import Decimal, ROUND_CEILING
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 import math
 
 
@@ -11,10 +11,14 @@ def calcular_nota_final(
         raise ValueError("nota deve ser um numero entre 0 e 10")
     if not math.isfinite(float(nota)) or nota < 0 or nota > 10:
         raise ValueError("nota deve ser um numero entre 0 e 10")
+    if not isinstance(justificativa_aprovada, bool):
+        raise ValueError("justificativa_aprovada deve ser bool")
 
     for nome, valor in (("prazo", prazo), ("entrega", entrega)):
         if not isinstance(valor, datetime):
             raise ValueError(f"{nome} deve ser datetime")
+    if novo_prazo is not None and not isinstance(novo_prazo, datetime):
+        raise ValueError("novo_prazo deve ser datetime")
 
     prazo_com_fuso = prazo.tzinfo is not None and prazo.utcoffset() is not None
     entrega_com_fuso = entrega.tzinfo is not None and entrega.utcoffset() is not None
@@ -38,7 +42,12 @@ def calcular_nota_final(
 
         prazo_efetivo = novo_prazo
 
-    atraso = entrega - prazo_efetivo
+    entrega_calculo = entrega
+    prazo_calculo = prazo_efetivo
+    if entrega_com_fuso:
+        entrega_calculo = entrega.astimezone(timezone.utc)
+        prazo_calculo = prazo_efetivo.astimezone(timezone.utc)
+    atraso = entrega_calculo - prazo_calculo
     if atraso.total_seconds() <= 0:
         dias_atraso = 0
     else:
@@ -47,7 +56,9 @@ def calcular_nota_final(
     if dias_atraso == 0:
         return {
             "aceita": True,
-            "nota_final": float(nota),
+            "nota_final": float(
+                Decimal(str(nota)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            ),
             "desconto_percentual": 0,
             "dias_atraso": 0,
         }
@@ -64,7 +75,7 @@ def calcular_nota_final(
     nota_decimal = Decimal(str(nota))
     fator = Decimal(100 - desconto_percentual) / Decimal(100)
     nota_final = float(
-        (nota_decimal * fator).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+        (nota_decimal * fator).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     )
 
     return {
